@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>led_driver.ko: control flow on Raspberry Pi 4</title>
+<style>
+:root{--bg:#f6f7f4;--fg:#1d2327;--mut:#5b666d;--card:#fff;--line:#c9d0d4;--hl:#fff3c4;--hlb:#c98a00;
+--u:#dbeafe;--l:#e0e7ff;--k:#fde2e4;--d:#d9f2dd;--g:#fdecc8;--h:#e5e5e5;
+--keep:#d9f2dd;--free:#fde7b0;--run:#d6e8fb;--usr:#e8defa;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14181b;--fg:#e6e9eb;--mut:#9aa6ad;--card:#1d2327;--line:#3a444b;--hl:#4a3f10;--hlb:#e0a82e;
+--u:#1c3556;--l:#2a2f5c;--k:#5a2329;--d:#1f4a2a;--g:#5a4515;--h:#33393d;--keep:#1f4a2a;--free:#5a4515;--run:#1c3556;--usr:#3a2c5e}}
+:root[data-theme="dark"]{--bg:#14181b;--fg:#e6e9eb;--mut:#9aa6ad;--card:#1d2327;--line:#3a444b;--hl:#4a3f10;--hlb:#e0a82e;
+--u:#1c3556;--l:#2a2f5c;--k:#5a2329;--d:#1f4a2a;--g:#5a4515;--h:#33393d;--keep:#1f4a2a;--free:#5a4515;--run:#1c3556;--usr:#3a2c5e}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 Georgia,"Times New Roman",serif}
+header{padding:20px 18px 6px;max-width:1100px;margin:auto}
+h1{font-size:1.5rem;margin:0 0 4px}
+p.sub{margin:0;color:var(--mut);max-width:70ch}
+code,.m{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.86em}
+nav{display:flex;gap:6px;flex-wrap:wrap;max-width:1100px;margin:14px auto 0;padding:0 18px}
+nav button,.ctl button{font:inherit;font-size:.92rem;padding:7px 12px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;cursor:pointer}
+nav button[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+button:focus-visible{outline:3px solid var(--hlb);outline-offset:2px}
+main{max-width:1100px;margin:auto;padding:12px 18px 40px}
+section{display:none}section.on{display:block}
+.ctl{display:flex;gap:8px;align-items:center;margin:10px 0;flex-wrap:wrap}
+.ctl .info{color:var(--mut);font-size:.9rem}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+.flow{display:grid;min-width:760px;gap:0}
+.lh{padding:8px 6px;text-align:center;font-weight:bold;font-size:.88rem;border-bottom:1px solid var(--line);position:sticky;top:0}
+.cell{padding:5px 6px;min-height:8px;border-left:1px dashed var(--line)}
+.step{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:.86rem;line-height:1.35;scroll-margin:80px}
+.step b{display:inline-block;min-width:1.5em}
+.step .via{display:block;font-size:.76rem;color:var(--mut);margin-bottom:2px}
+.step.hl{outline:3px solid var(--hlb);background:var(--hl)!important}
+.note{margin:12px 0 0;color:var(--mut);font-size:.92rem;max-width:80ch}
+.sel{display:flex;gap:6px;margin:10px 0}
+.sel button{font:inherit;font-size:.9rem;padding:5px 10px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;cursor:pointer}
+.sel button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.mem{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:780px){.mem{grid-template-columns:1fr}}
+.col h3{margin:0 0 6px;font-size:1.02rem}
+.blk{border:1px solid var(--line);border-radius:6px;padding:6px 9px;margin:-1px 0 0;font-size:.85rem}
+.blk b{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.86rem}
+.keep{background:var(--keep)}.free{background:var(--free)}.run{background:var(--run)}.usr{background:var(--usr)}.hw{background:var(--h)}
+.leg{display:flex;gap:12px;flex-wrap:wrap;font-size:.85rem;margin:8px 0}
+.leg i{display:inline-block;width:12px;height:12px;border:1px solid var(--line);margin-right:5px;vertical-align:-1px}
+.xfer{margin:14px 0;padding:8px 12px;border:2px solid var(--hlb);border-radius:6px;background:var(--hl);font-size:.9rem}
+</style>
+</head>
+<body>
+<header>
+<h1>led_driver.ko on Raspberry Pi 4: how control flows</h1>
+<p class="sub">Module <code>led_driver.ko</code> creates <code>/dev/led0</code>; writing <code>'1'</code> or <code>'0'</code> to it drives GPIO17. Pick a view, then press Next to step through it.</p>
+</header>
+<nav role="tablist">
+<button role="tab" aria-selected="true" data-t="ins">1. Insert module</button>
+<button role="tab" aria-selected="false" data-t="run">2. Write and read</button>
+<button role="tab" aria-selected="false" data-t="rm">3. Remove module</button>
+<button role="tab" aria-selected="false" data-t="mem">4. Memory map</button>
+</nav>
+<main>
+<section id="ins" class="on"><div class="ctl"></div><div class="wrap"><div class="flow"></div></div>
+<p class="note">If any call in <code>led_init</code> fails, it undoes what it already did and returns an error. The kernel then abandons the load and <code>led_exit</code> is never called.</p></section>
+
+<section id="run"><div class="sel"><button aria-pressed="true" data-v="w">write: LED on/off</button><button aria-pressed="false" data-v="r">read: get state</button></div>
+<div class="ctl"></div><div class="wrap"><div class="flow"></div></div>
+<p class="note"><code>echo -n 1 | sudo tee /dev/led0</code> and <code>led_app 1</code> differ only in who calls <code>write()</code>. <code>echo</code> writes into a pipe; <code>tee</code> (root) opens the device and makes the call that reaches the driver. Try <code>sudo strace -e trace=openat,write tee /dev/led0</code> to see it.</p></section>
+
+<section id="rm"><div class="ctl"></div><div class="wrap"><div class="flow"></div></div>
+<p class="note"><code>rmmod</code> fails with “Module is in use” while any process still has <code>/dev/led0</code> open, because the reference count is not zero.</p></section>
+
+<section id="mem">
+<div class="leg"><span><i class="keep"></i>lives until rmmod</span><span><i class="free"></i>freed right after insmod</span><span><i class="run"></i>allocated at run time</span><span><i class="usr"></i>user process</span><span><i class="hw"></i>hardware, not RAM</span></div>
+<div class="mem">
+<div class="col"><h3>Kernel side (EL1), module loaded</h3>
+<div class="blk keep"><b>struct module</b>: name, state, refcount, pointers to init and exit</div>
+<div class="blk free"><b>.init.text</b>: <code>led_init()</code>. Freed when init returns 0, so never call it again.</div>
+<div class="blk keep"><b>.text</b>: <code>led_write()</code>, <code>led_read()</code></div>
+<div class="blk keep"><b>.exit.text</b>: <code>led_exit()</code>. Kept, because rmmod needs it.</div>
+<div class="blk keep"><b>.rodata</b>: <code>led_fops</code> (const table), strings “led”, “led0”, log messages</div>
+<div class="blk keep"><b>.data</b>: <code>led_lookup</code> (the kernel keeps a pointer to it until removed), <code>led_misc</code></div>
+<div class="blk keep"><b>.bss</b>: <code>led_gpio</code> pointer (zero, set by <code>led_init</code>)</div>
+<div class="blk run"><b>kernel heap</b>: objects owned by gpiolib and the misc subsystem (<code>gpio_desc</code>, device entry), plus one <code>struct file</code> per open</div>
+<div class="blk run"><b>kernel stack</b> of the calling task (about 16 KB): <code>char c</code> in <code>led_write</code>, return addresses. Exists only during the syscall.</div>
+<div class="blk hw"><b>GPIO registers</b> (MMIO, mapped by pinctrl-bcm2711): GPSET0, GPCLR0, GPLEV0, GPFSEL1</div>
+</div>
+<div class="col"><h3>User side (EL0), process <code>led_app</code></h3>
+<div class="blk usr"><b>.text</b>: <code>main()</code> of led_app</div>
+<div class="blk usr"><b>.data / .bss</b>: none of note</div>
+<div class="blk usr"><b>heap</b>: unused by led_app</div>
+<div class="blk usr"><b>shared libraries</b> (mmap region): libc, with the <code>write()</code> wrapper that executes <code>svc</code></div>
+<div class="blk usr"><b>stack</b>: <code>fd</code>, <code>argc</code>, <code>argv</code>; the string <code>"1"</code> that <code>argv[1]</code> points to sits at the top</div>
+<div class="xfer"><code>copy_from_user(&amp;c, buf, 1)</code>: the driver copies one byte from the user buffer (<code>argv[1]</code>) into <code>c</code> on its kernel stack. The kernel never dereferences the user pointer directly. <code>led_read</code> does the reverse with <code>copy_to_user</code>.</div>
+</div></div>
+<p class="note">Compare with Arduino: there <code>.init0 … .init9</code> run once in flash and stay. Here <code>.init.text</code> is returned to the kernel after load, and the rest stays until <code>rmmod</code>.</p>
+</section>
+</main>
+<script>
+var LN={ins:[["User space","u"],["Kernel core","k"],["led_driver.ko","d"],["gpiolib / misc","g"],["Hardware","h"]],
+run:[["App or tee (EL0)","u"],["libc","l"],["Kernel VFS (EL1)","k"],["led_driver.ko","d"],["gpiolib / pinctrl","g"],["Hardware","h"]],
+rm:[["User space","u"],["Kernel core","k"],["led_driver.ko","d"],["gpiolib / misc","g"],["Hardware","h"]]};
+var S={
+ins:[[0,"<code>sudo insmod led_driver.ko</code>: opens the file, calls <code>finit_module(fd)</code>","",""],
+[1,"<code>load_module()</code>: copies the ELF into kernel memory, lays out .text .data .bss .init.text","svc trap, EL0 to EL1"],
+[1,"Checks <code>vermagic</code> and symbol CRCs against the running 7.2.4 kernel; resolves <code>gpiod_get</code>, <code>misc_register</code>; applies relocations"],
+[1,"<code>do_init_module()</code> calls <code>mod-&gt;init</code>, which is <code>led_init()</code>","indirect call"],
+[2,"<code>gpiod_add_lookup_table(&amp;led_lookup)</code>: name “led” maps to line 17 of <code>pinctrl-bcm2711</code>","call into kernel"],
+[3,"gpiolib stores the table in its list. No hardware is touched.",""],
+[2,"<code>gpiod_get(NULL, \"led\", GPIOD_OUT_LOW)</code>",""],
+[3,"gpiolib resolves “led” through the table and requests the line from the pinctrl-bcm2711 chip",""],
+[4,"Pin 17 is set to output (GPFSEL1) and driven low (GPCLR0)","register write"],
+[2,"<code>misc_register(&amp;led_misc)</code>",""],
+[3,"misc subsystem picks a dynamic minor and registers the device; devtmpfs/udev create <code>/dev/led0</code>",""],
+[2,"<code>pr_info(\"loaded\")</code>, <code>return 0</code>",""],
+[1,"Module state becomes LIVE, <code>.init.text</code> is freed, <code>insmod</code> returns","eret, EL1 to EL0"]],
+w:[[0,"<code>open(\"/dev/led0\")</code> (done once by tee or led_app)",""],
+[2,"<code>chrdev_open</code> then <code>misc_open</code> replace <code>f_op</code> with <code>&amp;led_fops</code>. No driver function runs: no <code>.open</code> is defined.","svc trap"],
+[0,"<code>write(fd, \"1\", 1)</code>: tee takes the byte from the pipe, led_app from <code>argv[1]</code>","back in user space"],
+[1,"libc wrapper puts the syscall number and arguments in registers and executes <code>svc #0</code>",""],
+[2,"CPU traps EL0 to EL1: <code>el0_svc</code>, <code>ksys_write</code>, <code>vfs_write</code>","exception entry"],
+[2,"VFS follows <code>file-&gt;f_op-&gt;write</code>","function pointer"],
+[3,"<code>led_write()</code>: <code>copy_from_user(&amp;c, buf, 1)</code> into a kernel variable","your code starts here"],
+[3,"<code>gpiod_set_value(led_gpio, c == '1')</code>",""],
+[4,"gpiolib calls the chip’s <code>set</code> callback in pinctrl-bcm2711","gpiolib"],
+[5,"Writes bit 17 of GPSET0 (high) or GPCLR0 (low). Pin level changes, LED switches.","MMIO write"],
+[3,"<code>return len</code>",""],
+[2,"Syscall exit, <code>eret</code> back to EL0","eret"],
+[1,"<code>write()</code> returns 1 (or -1 and <code>errno</code>)",""],
+[0,"Caller continues; <code>close(fd)</code> later releases the file (no driver code)",""]],
+r:[[0,"<code>read(fd, buf, 1)</code> (for example from <code>cat /dev/led0</code>)",""],
+[1,"libc wrapper executes <code>svc #0</code>",""],
+[2,"<code>ksys_read</code>, <code>vfs_read</code>, then <code>file-&gt;f_op-&gt;read</code>","EL0 to EL1"],
+[3,"<code>led_read()</code>: calls <code>gpiod_get_value(led_gpio)</code>","your code starts here"],
+[4,"gpiolib calls the chip’s <code>get</code> callback",""],
+[5,"Reads bit 17 of GPLEV0","MMIO read"],
+[3,"Converts to <code>'0'</code> or <code>'1'</code>, <code>copy_to_user</code>, <code>*off += 1</code>, returns 1",""],
+[2,"<code>eret</code> to user space; <code>read()</code> returns 1","EL1 to EL0"],
+[0,"Second <code>read()</code>: <code>*off &gt; 0</code>, driver returns 0 (EOF) and <code>cat</code> stops",""]],
+rm:[[0,"<code>sudo rmmod led_driver</code>: calls <code>delete_module()</code>",""],
+[1,"Kernel checks the reference count is zero (nobody has <code>/dev/led0</code> open)","svc trap"],
+[1,"Calls <code>mod-&gt;exit</code>, which is <code>led_exit()</code>","indirect call"],
+[2,"<code>misc_deregister(&amp;led_misc)</code>",""],
+[3,"<code>/dev/led0</code> disappears",""],
+[2,"<code>gpiod_put(led_gpio)</code>",""],
+[3,"gpiolib releases the line; it is no longer owned by the driver",""],
+[2,"<code>gpiod_remove_lookup_table(&amp;led_lookup)</code>, <code>pr_info(\"unloaded\")</code>","order is the reverse of init"],
+[1,"Module memory (.text .data .bss .rodata) and <code>struct module</code> are freed, <code>rmmod</code> returns","eret, EL1 to EL0"]]};
+var cur={};
+function build(sec,key,lanes){
+  var el=document.querySelector("#"+sec+" .flow"),st=S[key],n=lanes.length,h="";
+  el.style.gridTemplateColumns="repeat("+n+",1fr)";
+  lanes.forEach(function(l){h+='<div class="lh" style="background:var(--'+l[1]+')">'+l[0]+'</div>'});
+  st.forEach(function(s,i){for(var c=0;c<n;c++){
+    h+='<div class="cell">'+(c===s[0]?'<div class="step" id="'+sec+i+'" style="background:var(--'+lanes[c][1]+')">'+(s[2]?'<span class="via">'+s[2]+'</span>':'')+'<b>'+(i+1)+'.</b> '+s[1]+'</div>':'')+'</div>'}});
+  el.innerHTML=h;cur[sec]={i:-1,key:key,n:st.length};
+  var ctl=document.querySelector("#"+sec+" .ctl");
+  ctl.innerHTML='<button data-a="p">◀ Back</button><button data-a="n">Next ▶</button><button data-a="x">Reset</button><span class="info"></span>';
+  upd(sec);
+}
+function upd(sec){var c=cur[sec];
+  document.querySelectorAll("#"+sec+" .step").forEach(function(e){e.classList.remove("hl")});
+  var info=document.querySelector("#"+sec+" .info");
+  if(c.i<0){info.textContent="Step 0 of "+c.n;return}
+  var e=document.getElementById(sec+c.i);e.classList.add("hl");
+  try{e.scrollIntoView({block:"nearest",inline:"nearest"})}catch(x){}
+  info.textContent="Step "+(c.i+1)+" of "+c.n;}
+document.addEventListener("click",function(ev){
+  var b=ev.target.closest("button");if(!b)return;
+  if(b.dataset.t){document.querySelectorAll("nav button").forEach(function(x){x.setAttribute("aria-selected",x===b)});
+    document.querySelectorAll("section").forEach(function(s){s.classList.toggle("on",s.id===b.dataset.t)});return}
+  if(b.dataset.v){document.querySelectorAll(".sel button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});build("run",b.dataset.v,LN.run);return}
+  if(b.dataset.a){var sec=b.closest("section").id,c=cur[sec];
+    if(b.dataset.a==="n"&&c.i<c.n-1)c.i++;if(b.dataset.a==="p"&&c.i>-1)c.i--;if(b.dataset.a==="x")c.i=-1;upd(sec)}});
+build("ins","ins",LN.ins);build("run","w",LN.run);build("rm","rm",LN.rm);
+</script>
+</body>
+</html>

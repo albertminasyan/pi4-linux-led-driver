@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lab: Linux LED driver on Raspberry Pi 4</title>
+<style>
+:root{--bg:#f6f7f4;--fg:#1d2327;--mut:#5b666d;--card:#fff;--line:#c9d0d4;--code:#10171c;--codefg:#d8e6ee;--ok:#2f7d3b;--warn:#fff3c4;--warnb:#c98a00;--acc:#1f5f8b;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14181b;--fg:#e6e9eb;--mut:#9aa6ad;--card:#1d2327;--line:#3a444b;--code:#0a0e11;--codefg:#d8e6ee;--ok:#6fcf7f;--warn:#4a3f10;--warnb:#e0a82e;--acc:#7db8e6}}
+:root[data-theme="dark"]{--bg:#14181b;--fg:#e6e9eb;--mut:#9aa6ad;--card:#1d2327;--line:#3a444b;--code:#0a0e11;--codefg:#d8e6ee;--ok:#6fcf7f;--warn:#4a3f10;--warnb:#e0a82e;--acc:#7db8e6}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 Georgia,"Times New Roman",serif}
+.w{max-width:860px;margin:auto;padding:0 16px}
+h1{font-size:1.55rem;margin:22px 0 4px}h2{font-size:1.2rem;margin:30px 0 8px}
+p{margin:6px 0}.mut{color:var(--mut)}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.88em}
+.bar{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:calc(8px + env(safe-area-inset-top,0px)) 0 8px}
+.bar .w{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.prog{flex:1;min-width:140px;height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.prog i{display:block;height:100%;width:0;background:var(--ok)}
+.set{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:12px 0}
+.set label{display:block;font-size:.88rem;color:var(--mut)}
+.set input{width:100%;box-sizing:border-box;font:inherit;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9rem;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg)}
+.step{background:var(--card);border:1px solid var(--line);border-radius:8px;margin:10px 0;padding:10px 14px}
+.step.done{border-color:var(--ok)}
+.step h3{margin:0;font-size:1rem;display:flex;gap:10px;align-items:flex-start}
+.step h3 input{margin-top:5px;width:18px;height:18px;flex:none}
+.step .body{margin:6px 0 2px 28px}
+.pre{position:relative;margin:8px 0}
+pre{margin:0;background:var(--code);color:var(--codefg);padding:10px 12px;border-radius:6px;overflow-x:auto;font:.84rem/1.45 ui-monospace,Menlo,Consolas,monospace}
+.cp{position:absolute;top:5px;right:5px;font:.76rem sans-serif;padding:3px 8px;border:1px solid #5c6c76;background:#25313a;color:#d8e6ee;border-radius:4px;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--warnb);outline-offset:2px}
+.exp{font-size:.9rem;color:var(--ok);margin:4px 0}
+.exp:before{content:"Expect: "}
+.warn{background:var(--warn);border-left:4px solid var(--warnb);padding:6px 10px;margin:8px 0;font-size:.93rem;border-radius:4px}
+.where{font:.8rem sans-serif;color:var(--acc);margin-left:auto;white-space:nowrap}
+table{border-collapse:collapse;font-size:.92rem;margin:8px 0}td,th{border:1px solid var(--line);padding:5px 9px;text-align:left}
+a{color:var(--acc)}
+footer{margin:36px 0 40px;color:var(--mut);font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="bar"><div class="w"><b>Pi 4 LED driver lab</b><div class="prog" aria-hidden="true"><i id="pb"></i></div><span id="pt" class="mut">0 of 0</span></div></div>
+<div class="w">
+<h1>Linux LED driver on Raspberry Pi 4: from toolchain to blinking LED</h1>
+<p class="mut">You will cross-compile mainline Linux 7.2.4 on a Debian 13 VM, put it on an SD card with Raspberry Pi OS Lite, then build a kernel module and a user program that switch an LED on GPIO17 through <code>/dev/led0</code>. Tick each step as you finish it; your progress is kept in this browser.</p>
+<div class="warn"><b>Before you start:</b> every <code>dd</code> and <code>mount</code> command below uses the SD card device you set here. Run <code>lsblk</code> and confirm the size. Writing to the wrong disk destroys it. Your VM’s system disk is normally <code>/dev/sda</code>.</div>
+<div class="set">
+<div><label for="dev">SD card device on the VM</label><input id="dev" value="/dev/sdb" spellcheck="false"></div>
+<div><label for="pi">Pi login for scp (user@address)</label><input id="pi" value="student@192.168.10.88" spellcheck="false"></div>
+</div>
+<p class="mut"><b>You need:</b> Debian 13 VM (VirtualBox) with about 30 GB free, a good SD card (16 GB or more; a Samsung Pro Endurance 32 GB works well, counterfeit cards make <code>dd</code> extremely slow), a Raspberry Pi 4B with a serial console cable or an HDMI screen and keyboard, an LED with a series resistor on GPIO17 (physical pin 11) and ground, and a GitHub account.</p>
+<div id="app"></div>
+<footer>See the companion flow diagrams for what happens inside the kernel during these steps: <a href="https://claude.ai/artifact/VvtnE3x9Tu2ZuvhAHNWx7N">led_driver.ko control flow</a>.</footer>
+</div>
+<script>
+var P=[
+{t:"A. Tools and SD card image (VM)",s:[
+{h:"Install the build tools",w:"VM",c:"sudo apt update\nsudo apt install gcc-aarch64-linux-gnu build-essential bc bison flex \\\n    libssl-dev libncurses-dev libelf-dev git",e:"aarch64-linux-gnu-gcc --version prints a version"},
+{h:"Download Raspberry Pi OS Lite and its checksum",w:"VM",c:"mkdir -p ~/tmp/pi4-main && cd ~/tmp/pi4-main\nwget https://downloads.raspberrypi.com/raspios_lite_arm64_latest -O raspios-lite-arm64.img.xz\nwget https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-06-19/2026-06-18-raspios-trixie-arm64-lite.img.xz.sha256"},
+{h:"Verify the download",w:"VM",c:"sha256sum raspios-lite-arm64.img.xz\ncat 2026-06-18-raspios-trixie-arm64-lite.img.xz.sha256",e:"both hashes identical",n:"The “latest” link moves over time. If the .sha256 file name no longer matches the image you got, fetch the checksum that belongs to your image."},
+{h:"Attach the SD card to the VM and identify it",w:"VM",c:"lsblk",e:"a new disk of your card’s size (for example 15 GB or 29.8 GB) that is not your system disk",n:"VirtualBox: Devices, Mass Storage, tick your card’s reader. Put the device name in the box at the top of this page."},
+{h:"Write the image to the card",w:"VM",c:"xz -d raspios-lite-arm64.img.xz\nsudo dd if=raspios-lite-arm64.img of=@DEV@ bs=4M status=progress conv=fsync\nlsblk",e:"@DEV@1 (512 MB boot, FAT) and @DEV@2 (root, ext4)",n:"The command can keep running after the copy reaches 100% while it flushes to the card. Wait for the prompt."}]},
+{t:"B. Mainline kernel 7.2.4",s:[
+{h:"Clone the kernel source",w:"VM",c:"git clone --depth 1 -b v7.2.4 https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git ~/eclipse-workspace/linux-mainline",n:"Use a tag. Cloning the master branch with --depth 1 did not work in our setup."},
+{h:"Configure and build (20 minutes to 2 hours)",w:"VM",c:"cd ~/eclipse-workspace/linux-mainline\nexport ARCH=arm64\nexport CROSS_COMPILE=aarch64-linux-gnu-\nmake defconfig\nmake -j$(nproc) Image modules dtbs",e:"arch/arm64/boot/Image exists"},
+{h:"Mount the card and back up the boot partition",w:"VM",c:"sudo mkdir -p /mnt/pi-boot /mnt/pi-root\nsudo mount @DEV@1 /mnt/pi-boot\nsudo mount @DEV@2 /mnt/pi-root\nsudo tar -czf ~/pi-boot-backup.tar.gz -C /mnt/pi-boot .",n:"Restore if the Pi does not boot: mount the boot partition and run sudo tar -xzf ~/pi-boot-backup.tar.gz -C /mnt/pi-boot"},
+{h:"Install modules, kernel and device tree",w:"VM",c:"cd ~/eclipse-workspace/linux-mainline\nexport ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-\nsudo make INSTALL_MOD_PATH=/mnt/pi-root modules_install\nsudo cp arch/arm64/boot/Image /mnt/pi-boot/kernel8.img\nsudo cp arch/arm64/boot/dts/broadcom/bcm2711-rpi-4-b.dtb /mnt/pi-boot/\nsync\nsudo umount /mnt/pi-boot /mnt/pi-root",n:"Mainline has no Raspberry Pi overlays, so none are copied. Our driver does not need one, because it claims the GPIO with gpiod_add_lookup_table."},
+{h:"Boot the Pi 4 and check the kernel",w:"Pi",c:"uname -r",e:"7.2.4",n:"Insert the card, power on, and watch the boot on a serial console from the VM: sudo screen /dev/ttyUSB0 115200. If the screen stays blank, use serial."}]},
+{t:"C. The project and its repository",s:[
+{h:"Create the GitHub repository",w:"Browser",c:"",n:"New repository named pi4-linux-led-driver. Description: Linux simple driver for Rpi4. Add a .gitignore for C, the GPL-2.0 license (right for kernel modules) and a README."},
+{h:"Create the local project and pull the initial files",w:"VM",c:"mkdir -p ~/eclipse-workspace/pi4-linux-led-driver\ncd ~/eclipse-workspace/pi4-linux-led-driver\ngit init -b main\ngit remote add origin git@github.com:YOUR-GITHUB-NAME/pi4-linux-led-driver.git\ngit branch -M main\ngit pull origin main",e:"README, .gitignore and LICENSE appear",n:"Replace YOUR-GITHUB-NAME. Your SSH key must be added to GitHub first."},
+{h:"Add the three source files",w:"VM",c:"# files provided by the instructor, in this directory:\n#   led_driver.c   led_app.c   Makefile\nls",e:"led_driver.c  led_app.c  Makefile  README.md  LICENSE"},
+{h:"Commit and push",w:"VM",c:"git add led_driver.c led_app.c Makefile\ngit commit -m \"LED driver for Pi 4 mainline\"\ngit push -u origin main"},
+{h:"Optional: set up Eclipse code navigation",w:"Eclipse",c:"",n:"Project properties, C/C++ General, Paths and Symbols, GNU C: add /home/student/eclipse-workspace/linux-mainline/include so kernel function definitions resolve."}]},
+{t:"D. Build and run the module",s:[
+{h:"Build the module against your kernel tree",w:"VM",c:"cd ~/eclipse-workspace/pi4-linux-led-driver\nmake -C ~/eclipse-workspace/linux-mainline M=$(pwd) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules",e:"led_driver.ko in the project directory"},
+{h:"Build the user program",w:"VM",c:"aarch64-linux-gnu-gcc -o led_app led_app.c\nfile led_app",e:"ELF 64-bit LSB executable, ARM aarch64"},
+{h:"Copy both files to the Pi",w:"VM",c:"scp led_driver.ko led_app @PI@:/tmp/",n:"If your SSH uses a non-default port, add -P PORT after scp."},
+{h:"Check the module matches the running kernel",w:"Pi",c:"cd /tmp\nuname -r\nmodinfo led_driver.ko | grep vermagic",e:"both show 7.2.4",n:"A mismatch makes insmod fail. Rebuild against the kernel tree you installed."},
+{h:"Load the module",w:"Pi",c:"sudo insmod led_driver.ko\nsudo dmesg | tail -3\nls -l /dev/led0\nsudo cat /sys/kernel/debug/gpio | grep -A1 \"gpio-17\"",e:"“led_driver: loaded, /dev/led0 ready”, the device node, and gpio-17 out lo"},
+{h:"Switch the LED from the shell",w:"Pi",c:"echo -n 1 | sudo tee /dev/led0\nsudo cat /sys/kernel/debug/gpio | grep -A1 \"gpio-17\"\necho -n 0 | sudo tee /dev/led0\nsudo cat /sys/kernel/debug/gpio | grep -A1 \"gpio-17\"",e:"out hi with the LED on, then out lo with it off",n:"sudo is needed on the tee side because /dev/led0 is owned by root."},
+{h:"Switch the LED from the C program",w:"Pi",c:"cd /tmp\nsudo ./led_app 1\nsudo cat /sys/kernel/debug/gpio | grep -A1 \"gpio-17\"\nsudo ./led_app 0\nsudo cat /sys/kernel/debug/gpio | grep -A1 \"gpio-17\"\ncat /dev/led0",e:"out hi, then out lo; cat prints the current state, 0 or 1"},
+{h:"Unload the module",w:"Pi",c:"sudo rmmod led_driver\nls /dev/led0\nsudo dmesg | tail -2",e:"/dev/led0 is gone, “led_driver: unloaded”"}]},
+{t:"E. Understand what happened",s:[
+{h:"Trace the system call",w:"Pi",c:"sudo insmod /tmp/led_driver.ko\necho -n 1 | sudo strace -e trace=openat,write tee /dev/led0",e:"openat(... \"/dev/led0\" ...) followed by write(3, \"1\", 1)",n:"This is the same write() that led_app makes. The kernel reaches led_write() through led_fops."},
+{h:"Explain the flow in your own words",w:"Think",c:"",n:"Load: led_init registers the GPIO lookup table, claims line 17 as an output (low) and registers the misc device, which creates /dev/led0. Write: open, write(fd,\"1\",1), svc from EL0 to EL1, vfs_write, led_fops.write, copy_from_user, gpiod_set_value, pinctrl-bcm2711 writes GPSET0 or GPCLR0. Read: led_read returns '0' or '1', and a second read returns 0, so cat stops. Unload: led_exit removes the device, releases the GPIO and the lookup table."},
+{h:"Exercise: fix the issues in the driver",w:"VM",c:"",n:"1. led_write ignores len: a zero-length write still reads one byte. Add if (!len) return 0; at the top. 2. Any byte other than '1' turns the LED off, including a newline. Decide whether to reject other characters with -EINVAL. 3. gpiod_set_value is not protected against concurrent writers. Is that a problem for one GPIO? 4. The Makefile uses $(LINUX), which the build command never sets. Make the Makefile work with a plain make LINUX=path call. Rebuild, copy, and repeat the tests."},
+{h:"Exercise: add an ioctl",w:"VM",c:"",n:"Define LED_ON and LED_OFF with _IO('L', 0) and _IO('L', 1) in a header shared by driver and app, add .unlocked_ioctl = led_ioctl to led_fops, and make led_app use ioctl(fd, LED_ON). Why can the shell not call this directly?"}]}
+];
+var KEY="pi4lab-v1",st={};try{st=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}
+function sv(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function sub(s){return s.split("@DEV@").join(document.getElementById("dev").value).split("@PI@").join(document.getElementById("pi").value)}
+var out="",n=0;
+P.forEach(function(p,pi){out+="<h2>"+p.t+"</h2>";p.s.forEach(function(s,si){var id=pi+"."+si;n++;
+ out+='<div class="step" id="s'+id+'"><h3><input type="checkbox" data-id="'+id+'" aria-label="Done"><span>'+(pi?"":"")+s.h+'</span><span class="where">'+s.w+'</span></h3><div class="body">';
+ if(s.c)out+='<div class="pre"><button class="cp" type="button">Copy</button><pre data-t="'+esc(s.c).replace(/"/g,"&quot;")+'"></pre></div>';
+ if(s.e)out+='<div class="exp" data-t="'+esc(s.e).replace(/"/g,"&quot;")+'"></div>';
+ if(s.n)out+='<p class="mut">'+esc(s.n)+'</p>';
+ out+="</div></div>"})});
+document.getElementById("app").innerHTML=out;
+function fill(){document.querySelectorAll("[data-t]").forEach(function(e){e.textContent=sub(e.getAttribute("data-t"))})}
+function prog(){var d=0;document.querySelectorAll(".step input").forEach(function(c){var o=c.checked;if(o)d++;c.closest(".step").classList.toggle("done",o)});
+ document.getElementById("pb").style.width=(100*d/n)+"%";document.getElementById("pt").textContent=d+" of "+n}
+document.querySelectorAll(".step input").forEach(function(c){c.checked=!!st[c.dataset.id];c.addEventListener("change",function(){st[c.dataset.id]=c.checked;sv();prog()})});
+document.querySelectorAll(".cp").forEach(function(b){b.addEventListener("click",function(){var t=b.parentNode.querySelector("pre").textContent;
+ var ok=function(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy"},1200)};
+ try{navigator.clipboard.writeText(t).then(ok,function(){b.textContent="Select and copy"})}catch(e){b.textContent="Select and copy"}})});
+["dev","pi"].forEach(function(i){document.getElementById(i).addEventListener("input",fill)});
+fill();prog();
+</script>
+</body>
+</html>
